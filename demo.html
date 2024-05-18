@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>affordance id</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            flex-direction: column;
+        }
+        svg {
+            width: 500px;
+            height: 500px;
+            background-color: #f0f0f0;
+        }
+        .component, .object {
+            fill: #fff;
+            stroke: #000;
+            stroke-width: 2;
+            cursor: pointer;
+        }
+        .component:hover, .object:hover {
+            fill: yellow;
+        }
+        .object {
+            fill: #add8e6;
+        }
+        .line {
+            stroke: #999;
+            stroke-width: 2;
+        }
+        .affordance {
+            margin: 5px 0;
+            transition: background-color 0.3s;
+            white-space: nowrap;
+        }
+        .affordance.highlight {
+            background-color: #ffff99;
+        }
+        .affordance.disabled {
+            color: #ccc;
+            text-decoration: line-through;
+        }
+        #affordances {
+            position: fixed;
+            left: 10px;
+            top: 10px;
+            border: 1px solid #ccc;
+            padding: 10px;
+            width: 250px;
+            background-color: white;
+            z-index: 1000;
+        }
+        #popup {
+            display: none;
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            border: 1px solid black;
+            background-color: white;
+            padding: 10px;
+            z-index: 1001;
+        }
+        #drop_zone {
+            width: 300px;
+            height: 100px;
+            border: 2px dashed #ccc;
+            line-height: 100px;
+            text-align: center;
+            background-color: #f9f9f9;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div id="drop_zone">Drop JSON here</div>
+    <div id="affordances"></div>
+    <svg viewBox="0 0 500 500"></svg>
+    <div id="popup">
+        <select id="issue-select"></select>
+        <button onclick="applyIssue()">Apply</button>
+    </div>
+
+    <script>
+        let currentPart = null;
+
+        document.getElementById('drop_zone').addEventListener('dragover', (event) => {
+            event.stopPropagation();
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'copy';
+        });
+
+        document.getElementById('drop_zone').addEventListener('drop', (event) => {
+            event.stopPropagation();
+            event.preventDefault();
+            const file = event.dataTransfer.files[0];
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const data = JSON.parse(event.target.result);
+                initializeSVG(data);
+            };
+            reader.readAsText(file);
+        });
+
+        function initializeSVG(data) {
+            const svg = document.querySelector('svg');
+            svg.innerHTML = ''; // Clear previous SVG elements
+            const affords = document.getElementById('affordances');
+            affords.innerHTML = ''; // Clear previous affordances
+            const centerX = 250;
+            const centerY = 250;
+            const radius = 40;
+            const objectRadius = 100;
+            const angleStep = 2 * Math.PI / data.part_object.length;
+
+            data.part_object.forEach((part, index) => {
+                const angle = angleStep * index;
+                const px = centerX + objectRadius * Math.cos(angle);
+                const py = centerY + objectRadius * Math.sin(angle);
+
+                let line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line.setAttribute('x1', centerX);
+                line.setAttribute('y1', centerY);
+                line.setAttribute('x2', px);
+                line.setAttribute('y2', py);
+                line.classList.add('line');
+                svg.appendChild(line);
+
+                let circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                circle.setAttribute('cx', px);
+                circle.setAttribute('cy', py);
+                circle.setAttribute('r', 30);
+                circle.classList.add('component');
+                circle.onclick = () => showPopup(part, data.affordance_disable[part], circle.getAttribute('data-disabled') === 'true');
+                svg.appendChild(circle);
+
+                let text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                text.setAttribute('x', px);
+                text.setAttribute('y', py);
+                text.setAttribute('text-anchor', 'middle');
+                text.setAttribute('alignment-baseline', 'central');
+                text.textContent = part;
+                text.id = 'text_' + part; 
+                svg.appendChild(text);
+
+                circle.addEventListener('mouseover', () => {
+                    data.affordance_dict[part]?.forEach(aff => {
+                        let affElement = document.getElementById(`${part}_${aff.replaceAll(" ", "_").toLowerCase()}`);
+                        if (!affElement.classList.contains('disabled')) {
+                            affElement.classList.add('highlight');
+                        }
+                    });
+                });
+                circle.addEventListener('mouseout', () => {
+                    data.affordance_dict[part]?.forEach(aff => {
+                        document.getElementById(`${part}_${aff.replaceAll(" ", "_").toLowerCase()}`).classList.remove('highlight');
+                    });
+                });
+            });
+
+            let objCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            objCircle.setAttribute('cx', centerX);
+            objCircle.setAttribute('cy', centerY);
+            objCircle.setAttribute('r', radius);
+            objCircle.classList.add('object');
+            svg.appendChild(objCircle);
+
+            let objText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            objText.setAttribute('x', centerX);
+            objText.setAttribute('y', centerY);
+            objText.setAttribute('text-anchor', 'middle');
+            objText.setAttribute('alignment-baseline', 'central');
+            objText.textContent = data.object;
+            svg.appendChild(objText);
+
+            Object.keys(data.affordance_dict).forEach(part => {
+                data.affordance_dict[part].forEach(aff => {
+                    let affDiv = document.createElement('div');
+                    affDiv.classList.add('affordance');
+                    affDiv.textContent = aff;
+                    affDiv.id = `${part}_${aff.replaceAll(" ", "_").toLowerCase()}`;
+                    affords.appendChild(affDiv);
+                });
+            });
+        }
+
+        function showPopup(part, issue, isDisabled) {
+            currentPart = part;
+            const select = document.getElementById('issue-select');
+            select.innerHTML = '';
+            if (!isDisabled) {
+                let option = document.createElement('option');
+                option.value = issue;
+                option.textContent = issue;
+                select.appendChild(option);
+            }
+            let removeOption = document.createElement('option');
+            removeOption.value = 'remove';
+            removeOption.textContent = 'Remove Attribute';
+            select.appendChild(removeOption);
+
+            document.getElementById('popup').style.display = 'block';
+        }
+
+        function applyIssue() {
+            const issue = document.getElementById('issue-select').value;
+            const circle = document.querySelector(`[id='text_${currentPart}']`).parentNode.querySelector('circle');
+            const textElement = document.getElementById('text_' + currentPart);
+            const affords = document.querySelectorAll('.affordance');
+            if (issue === 'remove') {
+                affords.forEach(affDiv => {
+                    if (affDiv.id.startsWith(currentPart)) {
+                        affDiv.classList.remove('disabled');
+                    }
+                });
+                textElement.textContent = currentPart;
+                circle.removeAttribute('data-disabled');
+            } else {
+                affords.forEach(affDiv => {
+                    if (affDiv.id.startsWith(currentPart)) {
+                        affDiv.classList.add('disabled');
+                    }
+                });
+                textElement.textContent = currentPart + ' (' + issue + ')';
+                circle.setAttribute('data-disabled', 'true');
+            }
+            document.getElementById('popup').style.display = 'none';
+        }
+    </script>
+</body>
+</html>
